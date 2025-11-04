@@ -96,7 +96,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     }
 
     # 加载 sensor 平台
-    await hass.config_entries.async_forward_entry_platforms(entry, PLATFORMS)
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     return True
 
@@ -109,5 +109,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # 移除 hass.data 中的数据
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id)
+
 
     return unload_ok
