@@ -1,0 +1,13 @@
+{
+  "domain": "octopus_energy_jp",
+  "name": "Octopus Energy Japan",
+  "config_flow": true,
+  "documentation": "https://github.com/your-repo-here",
+  "issue_tracker": "https://github.com/your-repo-here/issues",
+  "codeowners": [],
+  "version": "1.0.0",
+  "iot_class": "cloud_polling",
+  "requirements": [
+    "pytz"
+  ]
+}
