@@ -12,7 +12,7 @@
 ## HACS 安装
 1.  打开 HACS > 集成 > (点击右上角三个点)。
 2.  选择 "自定义仓库" (Custom repositories)。
-3.  在 URL 处粘贴 `https://github.com/你的用户名/ha-octopus-energy-jp`。
+3.  在 URL 处粘贴 `https://github.com/Simohara/ha_octopus_energy_jp`。
 4.  类别选择 "集成" (Integration)。
 5.  点击 "添加" (Add)。
 6.  在 HACS 中找到 "Octopus Energy Japan" 并安装它。
@@ -21,4 +21,5 @@
 1.  重启 Home Assistant。
 2.  转到 **设置** > **设备与服务** > **添加集成**。
 3.  搜索 "Octopus Energy Japan"。
+
 4.  输入你的 Octopus Energy 邮箱、密码和 API URL。
