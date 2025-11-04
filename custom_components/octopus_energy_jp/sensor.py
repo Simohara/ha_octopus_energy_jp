@@ -13,7 +13,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.components.sensor.const import CURRENCY_YEN,ENERGY_KILO_WATT_HOUR
+from homeassistant.const import UnitOfEnergy
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -77,7 +77,7 @@ class OctopusTodayConsumptionSensor(OctopusBaseSensor):
         super().__init__(coordinator, device_info, account_number, "today_consumption")
         self._attr_name = f"Octopus Today Consumption {account_number}"
         
-        self._attr_native_unit_of_measurement = ENERGY_KILO_WATT_HOUR
+        self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
         self._attr_device_class = SensorDeviceClass.ENERGY
         self._attr_state_class = SensorStateClass.TOTAL_INCREASING
         self._tz = get_tokyo_tz() # 获取东京时区
@@ -126,9 +126,10 @@ class OctopusMonthlyEstimateSensor(OctopusBaseSensor):
     def __init__(self, coordinator, device_info, account_number):
         super().__init__(coordinator, device_info, account_number, "monthly_estimate")
         self._attr_name = f"Octopus Monthly Estimate {account_number}"
-        self._attr_native_unit_of_measurement = CURRENCY_YEN
+        self._attr_native_unit_of_measurement = "JPY"
         self._attr_device_class = SensorDeviceClass.MONETARY
-        self._attr_state_class = SensorStateClass.TOTAL
+         # 估算值会上下波动，不是“累计总量”，为避免统计警告，不设置 state_class
+        self._attr_state_class = None
         self._attr_icon = "mdi:cash-clock"
         self._tz = get_tokyo_tz()
 
@@ -199,9 +200,9 @@ class OctopusBalanceSensor(OctopusBaseSensor):
     def __init__(self, coordinator, device_info, account_number):
         super().__init__(coordinator, device_info, account_number, "balance")
         self._attr_name = f"Octopus Balance {account_number}"
-        self._attr_native_unit_of_measurement = CURRENCY_YEN
+        self._attr_native_unit_of_measurement = "JPY"
         self._attr_device_class = SensorDeviceClass.MONETARY
-        self._attr_state_class = SensorStateClass.TOTAL
+        self._attr_state_class = None
         self._attr_icon = "mdi:cash"
 
     @property
@@ -216,9 +217,9 @@ class OctopusOverdueBalanceSensor(OctopusBaseSensor):
     def __init__(self, coordinator, device_info, account_number):
         super().__init__(coordinator, device_info, account_number, "overdue_balance")
         self._attr_name = f"Octopus Overdue Balance {account_number}"
-        self._attr_native_unit_of_measurement = CURRENCY_YEN
+        self._attr_native_unit_of_measurement = "JPY"
         self._attr_device_class = SensorDeviceClass.MONETARY
-        self._attr_state_class = SensorStateClass.TOTAL
+        self._attr_state_class = None
         self._attr_icon = "mdi:cash-remove"
 
     @property
@@ -233,9 +234,9 @@ class OctopusLastBillSensor(OctopusBaseSensor):
     def __init__(self, coordinator, device_info, account_number):
         super().__init__(coordinator, device_info, account_number, "last_bill")
         self._attr_name = f"Octopus Last Bill {account_number}"
-        self._attr_native_unit_of_measurement = CURRENCY_YEN
+        self._attr_native_unit_of_measurement = "JPY"
         self._attr_device_class = SensorDeviceClass.MONETARY
-        self._attr_state_class = SensorStateClass.TOTAL
+        self._attr_state_class = None
         self._attr_icon = "mdi:receipt-text"
 
     @property
