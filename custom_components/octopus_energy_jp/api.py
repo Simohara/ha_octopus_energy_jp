@@ -7,7 +7,7 @@ from typing import Any, List, Optional
 
 import pytz
 from homeassistant.const import CONF_EMAIL, CONF_PASSWORD
-from homeassistant.helpers.aiohttp_client import ClientSession
+from aiohttp import ClientSession
 
 from .const import CONF_API_URL, TIMEZONE
 
@@ -221,4 +221,5 @@ class OctopusEnergyJpApiClient:
             raise Exception(f"Failed to get comprehensive data: {data['errors']}")
         
         # 返回 'account' 键下的所有数据
+
         return data["data"]["account"]
