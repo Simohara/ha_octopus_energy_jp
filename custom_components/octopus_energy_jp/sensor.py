@@ -13,7 +13,8 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import CURRENCY_YEN, ENERGY_KILO_WATT_HOUR
+from homeassistant.const import ENERGY_KILO_WATT_HOUR
+from homeassistant.components.sensor.const import CURRENCY_YEN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
@@ -332,4 +333,5 @@ class OctopusProductSensor(OctopusBaseSensor):
                 
             except (KeyError, IndexError, TypeError):
                 pass
+
         return {}
