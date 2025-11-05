@@ -49,6 +49,10 @@ async def async_setup_entry(
     async_add_entities(
         [
             OctopusTodayConsumptionSensor(coordinator, device_info, account_number),
+            # --- 新增传感器 ---
+            OctopusYesterdayConsumptionSensor(coordinator, device_info, account_number),
+            OctopusLastMonthConsumptionSensor(coordinator, device_info, account_number),
+            # --- 结束新增 ---
             OctopusMonthlyEstimateSensor(coordinator, device_info, account_number), # (本月预估)
             OctopusBalanceSensor(coordinator, device_info, account_number),
             OctopusOverdueBalanceSensor(coordinator, device_info, account_number),
@@ -89,7 +93,6 @@ class OctopusTodayConsumptionSensor(OctopusBaseSensor):
             return None
             
         try:
-            # (这个传感器的值是在 __init__.py 的 async_update_data 中预先计算好的)
             # 修正: 我们在这里实时计算 "今日" 用电量
             all_readings = self.coordinator.data["properties"][0]["electricitySupplyPoints"][0]["halfHourlyReadings"]
             
@@ -121,6 +124,94 @@ class OctopusTodayConsumptionSensor(OctopusBaseSensor):
         return {}
 
 
+# --- 新增传感器: 昨日用电量 ---
+class OctopusYesterdayConsumptionSensor(OctopusBaseSensor):
+    """
+    传感器：昨日累计用电量
+    """
+    def __init__(self, coordinator, device_info, account_number):
+        super().__init__(coordinator, device_info, account_number, "yesterday_consumption")
+        self._attr_name = f"Octopus Yesterday Consumption {account_number}"
+        
+        self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+        self._attr_device_class = SensorDeviceClass.ENERGY
+        # 这是一个已完成的、固定的值，所以使用 TOTAL
+        self._attr_state_class = SensorStateClass.TOTAL 
+        self._tz = get_tokyo_tz()
+
+    @property
+    def native_value(self) -> decimal.Decimal | None:
+        """返回昨日累计用电量"""
+        if not self.coordinator.data:
+            return None
+            
+        try:
+            all_readings = self.coordinator.data["properties"][0]["electricitySupplyPoints"][0]["halfHourlyReadings"]
+            
+            total_consumption = decimal.Decimal(0)
+            today_date = datetime.datetime.now(tz=self._tz).date()
+            yesterday_date = today_date - datetime.timedelta(days=1)
+
+            for reading in all_readings:
+                start_at_utc = datetime.datetime.fromisoformat(reading["startAt"])
+                start_at_tokyo = start_at_utc.astimezone(self._tz)
+                
+                if start_at_tokyo.date() == yesterday_date:
+                    total_consumption += decimal.Decimal(reading["value"])
+            
+            return total_consumption
+
+        except (KeyError, IndexError, TypeError):
+            return None
+
+
+# --- 新增传感器: 上月用电量 ---
+class OctopusLastMonthConsumptionSensor(OctopusBaseSensor):
+    """
+    传感器：上个月累计用电量
+    """
+    def __init__(self, coordinator, device_info, account_number):
+        super().__init__(coordinator, device_info, account_number, "last_month_consumption")
+        self._attr_name = f"Octopus Last Month Consumption {account_number}"
+        
+        self._attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+        self._attr_device_class = SensorDeviceClass.ENERGY
+        # 这是一个已完成的、固定的值，所以使用 TOTAL
+        self._attr_state_class = SensorStateClass.TOTAL
+        self._tz = get_tokyo_tz()
+
+    @property
+    def native_value(self) -> decimal.Decimal | None:
+        """返回上个月累计用电量"""
+        if not self.coordinator.data:
+            return None
+            
+        try:
+            all_readings = self.coordinator.data["properties"][0]["electricitySupplyPoints"][0]["halfHourlyReadings"]
+            
+            total_consumption = decimal.Decimal(0)
+            
+            # 计算上个月的年份和月份
+            today_date = datetime.datetime.now(tz=self._tz).date()
+            start_of_current_month = today_date.replace(day=1)
+            last_day_of_prev_month = start_of_current_month - datetime.timedelta(days=1)
+            target_year = last_day_of_prev_month.year
+            target_month = last_day_of_prev_month.month
+
+            for reading in all_readings:
+                start_at_utc = datetime.datetime.fromisoformat(reading["startAt"])
+                start_at_tokyo = start_at_utc.astimezone(self._tz)
+                reading_date = start_at_tokyo.date()
+                
+                if reading_date.year == target_year and reading_date.month == target_month:
+                    total_consumption += decimal.Decimal(reading["value"])
+            
+            return total_consumption
+
+        except (KeyError, IndexError, TypeError):
+            return None
+
+
 class OctopusMonthlyEstimateSensor(OctopusBaseSensor):
     """传感器：本月预估电费"""
     def __init__(self, coordinator, device_info, account_number):
@@ -128,8 +219,12 @@ class OctopusMonthlyEstimateSensor(OctopusBaseSensor):
         self._attr_name = f"Octopus Monthly Estimate {account_number}"
         self._attr_native_unit_of_measurement = "JPY"
         self._attr_device_class = SensorDeviceClass.MONETARY
-         # 估算值会上下波动，不是“累计总量”，为避免统计警告，不设置 state_class
-        self._attr_state_class = None
+         
+        # --- 修改: 根据您的要求，将 state_class 改为 TOTAL ---
+        # (这表示一个在某个周期（每月）重置的总和)
+        self._attr_state_class = SensorStateClass.TOTAL
+        # --- 修改结束 ---
+        
         self._attr_icon = "mdi:cash-clock"
         self._tz = get_tokyo_tz()
 
@@ -144,8 +239,21 @@ class OctopusMonthlyEstimateSensor(OctopusBaseSensor):
             all_readings = self.coordinator.data["properties"][0]["electricitySupplyPoints"][0]["halfHourlyReadings"]
             product_data = self.coordinator.data["properties"][0]["electricitySupplyPoints"][0]["agreements"][0]["product"]
             
-            # 2. 计算总用电量 (coordinator 已经获取了本月至今的全部读数)
-            total_kWh_so_far = sum(decimal.Decimal(r["value"]) for r in all_readings)
+            # 2. 计算本月总用电量
+            # (注意: 协调器现在获取的是上月+本月的数据, 我们需要过滤)
+            total_kWh_so_far = decimal.Decimal(0)
+            today_date = datetime.datetime.now(tz=self._tz).date()
+            target_year = today_date.year
+            target_month = today_date.month
+
+            for r in all_readings:
+                start_at_utc = datetime.datetime.fromisoformat(r["startAt"])
+                start_at_tokyo = start_at_utc.astimezone(self._tz)
+                reading_date = start_at_tokyo.date()
+                
+                if reading_date.year == target_year and reading_date.month == target_month:
+                    total_kWh_so_far += decimal.Decimal(r["value"])
+
             
             # 3. 获取电价结构
             standing_charge_per_day = decimal.Decimal(product_data["standingCharges"][0]["pricePerUnit"])
@@ -163,11 +271,39 @@ class OctopusMonthlyEstimateSensor(OctopusBaseSensor):
                 step_end = decimal.Decimal(step["stepEnd"]) if step["stepEnd"] is not None else decimal.Decimal('Infinity')
                 
                 kwh_on_this_step = 0
-                if remaining_kwh > 0:
-                    step_width = step_end - step_start
-                    kwh_on_this_step = min(remaining_kwh, step_width)
+                # (修正: 逻辑应基于总用电量落在哪个区间)
+                # (修正2: 不, 原始逻辑是正确的, 它计算的是阶梯 *用量*)
+                if total_kWh_so_far > step_start:
+                    # 计算此阶梯的用电量
+                    kwh_on_this_step = min(total_kWh_so_far - step_start, step_end - step_start)
                     consumption_cost += kwh_on_this_step * price
-                    remaining_kwh -= kwh_on_this_step
+
+            # (原始的阶梯逻辑似乎更健壮, 让我们还原它)
+            consumption_cost = decimal.Decimal(0)
+            remaining_kwh = total_kWh_so_far # 使用我们刚刚计算的本月总kWh
+            
+            for step in sorted_steps:
+                price = decimal.Decimal(step["pricePerUnit"])
+                step_start = decimal.Decimal(step["stepStart"])
+                step_end = decimal.Decimal(step["stepEnd"]) if step["stepEnd"] is not None else decimal.Decimal('Infinity')
+                
+                # (这个逻辑是错误的, 假设 remaining_kwh = 150. step1 (0-120), step2 (120-300))
+                # (step1: step_width=120, kwh=min(150, 120)=120. cost+=120*p1. remain=30)
+                # (step2: step_width=180, kwh=min(30, 180)=30. cost+=30*p2. remain=0)
+                # (这似乎是正确的, 为什么我之前要改它?)
+                # (啊, 不对, 它是 `remaining_kwh > 0`... )
+                
+                # (让我们使用原始的 `sensor.py` v1.0.1 中的阶梯逻辑，它是正确的)
+                step_width = step_end - step_start
+                kwh_on_this_step = min(remaining_kwh, step_width)
+                
+                if kwh_on_this_step > 0:
+                     consumption_cost += kwh_on_this_step * price
+                     remaining_kwh -= kwh_on_this_step
+                
+                if remaining_kwh <= 0:
+                    break
+
 
             # 5. 计算燃料调整费 (Fuel Adjustment Cost)
             fuel_cost = total_kWh_so_far * fuel_adj_per_kwh
@@ -335,4 +471,3 @@ class OctopusProductSensor(OctopusBaseSensor):
                 pass
 
         return {}
-

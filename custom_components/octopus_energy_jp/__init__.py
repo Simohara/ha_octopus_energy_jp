@@ -10,6 +10,7 @@ from homeassistant.const import CONF_EMAIL, CONF_PASSWORD, Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+import aiohttp # (需要导入 aiohttp 用于异常处理)
 
 from .api import OctopusEnergyJpApiClient, get_midnight_in_tokyo, get_tokyo_tz
 from .const import (
@@ -53,22 +54,27 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         """Fetch data from API endpoint."""
         _LOGGER.debug("Coordinator update started")
         try:
-            # --- 修正 ---
-            # 确定用电数据的时间范围：从本月1号到东京时间的现在
+            # --- 修改开始: 扩大数据获取范围 ---
+            # 我们需要获取从“上个月1号”到“现在”的数据，以支持“上月总览”和“昨日”传感器
             tz = get_tokyo_tz()
             now = datetime.datetime.now(tz=tz)
-            start_of_month = get_midnight_in_tokyo(now.date().replace(day=1))
             
+            # 找到本月1号的午夜
+            start_of_current_month = get_midnight_in_tokyo(now.date().replace(day=1))
+            
+            # 找到上月1号的午夜 (通过本月1号往前推1天，找到上个月的最后一天，再取该月1号)
+            last_day_of_prev_month = start_of_current_month - datetime.timedelta(days=1)
+            start_of_last_month = get_midnight_in_tokyo(last_day_of_prev_month.date().replace(day=1))
+            
+            # --- 修改结束 ---
+
             async with timeout(30): # 30秒超时
                 data = await api_client.async_get_data(
                     account_number=account_number,
-                    start_time=start_of_month, # (从本月1号开始)
+                    start_time=start_of_last_month, # (修改: 从上月1号开始)
                     end_time=now,
                 )
                 
-                # (我们不再预先计算 'calculated_today_consumption')
-                # (所有计算逻辑都移到了 sensor.py 实体中，这样更清晰)
-
                 return data
 
         except aiohttp.ClientError as err:
