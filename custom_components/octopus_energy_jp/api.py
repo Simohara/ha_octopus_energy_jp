@@ -142,6 +142,7 @@ class OctopusEnergyJpApiClient:
         self._password = password
         self._api_url = api_url
         self._token: Optional[str] = None
+        self._token_expiry: Optional[datetime.datetime] = None
 
     async def async_get_token(self) -> str:
         """获取 (或刷新) 认证 token."""
@@ -158,13 +159,33 @@ class OctopusEnergyJpApiClient:
             if resp.status >= 400:
                 _LOGGER.error("Failed to get token: %s", data)
                 resp.raise_for_status()
-            self._token = data["data"]["obtainKrakenToken"]["token"]
+            
+            # 获取 token 和过期时间
+            token_data = data["data"]["obtainKrakenToken"]
+            self._token = token_data["token"]
+            
+            # 解析 token payload 来获取过期时间
+            # JWT 的第二部分是 payload，包含过期时间
+            # 但为了简单起见，我们设置一个保守的过期时间（比如 50 分钟）
+            # 因为 Octopus 的 token 通常是 1 小时有效
+            self._token_expiry = datetime.datetime.now() + datetime.timedelta(minutes=50)
+            _LOGGER.debug(f"Token obtained, expires at {self._token_expiry}")
+            
             return self._token
+    
+    async def _ensure_valid_token(self):
+        """确保 token 有效，如果需要则刷新"""
+        if self._token is None or self._token_expiry is None:
+            _LOGGER.debug("No token found, requesting new one")
+            await self.async_get_token()
+        elif datetime.datetime.now() >= self._token_expiry:
+            _LOGGER.debug("Token expired or about to expire, refreshing")
+            await self.async_get_token()
 
     async def async_get_account_number(self) -> str:
         """获取账户号码 (来自 octopus.py)"""
-        if not self._token:
-            await self.async_get_token()
+        # 确保 token 有效
+        await self._ensure_valid_token()
 
         headers = {"authorization": f"JWT {self._token}"}
         payload = {"query": GET_ACCOUNT_BODY}
@@ -172,6 +193,19 @@ class OctopusEnergyJpApiClient:
         _LOGGER.debug("Requesting account number")
         async with self._session.post(self._api_url, json=payload, headers=headers) as resp:
             data = await resp.json()
+            
+            # 检查是否有 JWT 过期错误
+            if "errors" in data:
+                for error in data["errors"]:
+                    if "JWT has expired" in error.get("message", "") or "KT-CT-1124" in error.get("extensions", {}).get("errorCode", ""):
+                        _LOGGER.info("Token expired, refreshing and retrying")
+                        await self.async_get_token()
+                        headers = {"authorization": f"JWT {self._token}"}
+                        # 重试请求
+                        async with self._session.post(self._api_url, json=payload, headers=headers) as retry_resp:
+                            data = await retry_resp.json()
+                        break
+            
             if resp.status >= 400:
                 _LOGGER.error("Failed to get account number: %s", data)
                 resp.raise_for_status()
@@ -186,8 +220,8 @@ class OctopusEnergyJpApiClient:
         执行统一的 GraphQL 查询以获取所有数据。
         这是 DataUpdateCoordinator 将调用的主要方法。
         """
-        if not self._token:
-            await self.async_get_token()
+        # 确保 token 有效
+        await self._ensure_valid_token()
 
         headers = {"authorization": f"JWT {self._token}"}
         variables = {
@@ -198,28 +232,47 @@ class OctopusEnergyJpApiClient:
         payload = {"query": COMPREHENSIVE_ACCOUNT_QUERY, "variables": variables}
 
         _LOGGER.debug(f"Requesting comprehensive data for {account_number}")
-        async with self._session.post(self._api_url, json=payload, headers=headers) as resp:
-            # 令牌过期处理
-            if resp.status == 401:
-                _LOGGER.info("Token expired, requesting new one.")
-                self._token = None # 清除旧 token
-                await self.async_get_token() # 获取新 token
-                headers = {"authorization": f"JWT {self._token}"} # 更新 headers
-                # 重新发送请求
-                async with self._session.post(self._api_url, json=payload, headers=headers) as retry_resp:
-                    data = await retry_resp.json()
-                    if retry_resp.status >= 400:
-                        _LOGGER.error("Failed to get comprehensive data (on retry): %s", data)
-                        retry_resp.raise_for_status()
-            else:
+        
+        # 最多重试一次（如果遇到 token 过期错误）
+        for attempt in range(2):
+            async with self._session.post(self._api_url, json=payload, headers=headers) as resp:
                 data = await resp.json()
-                if resp.status >= 400:
+                
+                # 检查是否有 JWT 过期错误（可能在响应体中）
+                if "errors" in data:
+                    has_jwt_error = False
+                    for error in data["errors"]:
+                        error_msg = error.get("message", "")
+                        error_code = error.get("extensions", {}).get("errorCode", "")
+                        
+                        if "JWT has expired" in error_msg or "Signature of the JWT has expired" in error_msg or error_code == "KT-CT-1124":
+                            has_jwt_error = True
+                            break
+                    
+                    if has_jwt_error and attempt == 0:
+                        _LOGGER.info("Token expired (detected from error response), refreshing and retrying")
+                        await self.async_get_token()
+                        headers = {"authorization": f"JWT {self._token}"}
+                        continue  # 重试
+                    elif has_jwt_error:
+                        # 第二次还是失败，抛出异常
+                        raise Exception(f"Failed to get comprehensive data after token refresh: {data['errors']}")
+                    else:
+                        # 其他类型的错误
+                        raise Exception(f"Failed to get comprehensive data: {data['errors']}")
+                
+                # 检查 HTTP 状态码
+                if resp.status == 401 and attempt == 0:
+                    _LOGGER.info("Got 401 status, refreshing token and retrying")
+                    await self.async_get_token()
+                    headers = {"authorization": f"JWT {self._token}"}
+                    continue  # 重试
+                elif resp.status >= 400:
                     _LOGGER.error("Failed to get comprehensive data: %s", data)
                     resp.raise_for_status()
-
-        if "errors" in data:
-            raise Exception(f"Failed to get comprehensive data: {data['errors']}")
+                
+                # 成功获取数据
+                break
         
         # 返回 'account' 键下的所有数据
-
         return data["data"]["account"]
