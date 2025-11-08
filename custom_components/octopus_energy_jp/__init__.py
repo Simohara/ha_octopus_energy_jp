@@ -55,7 +55,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         _LOGGER.debug("Coordinator update started")
         try:
             # --- 修改开始: 扩大数据获取范围 ---
-            # 我们需要获取从“上个月1号”到“现在”的数据，以支持“上月总览”和“昨日”传感器
+            # 我们需要获取从"上个月1号"到"现在"的数据，以支持"上月总览"和"昨日"传感器
             tz = get_tokyo_tz()
             now = datetime.datetime.now(tz=tz)
             

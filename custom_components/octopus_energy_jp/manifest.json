@@ -5,11 +5,9 @@
   "documentation": "https://github.com/Simohara/ha_octopus_energy_jp",
   "issue_tracker": "https://github.com/Simohara/ha_octopus_energy_jp/issues",
   "codeowners": [],
-  "version": "1.0.1",
+  "version": "1.1.0",
   "iot_class": "cloud_polling",
   "requirements": [
     "pytz"
   ]
-
 }
-
